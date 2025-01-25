@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         osu! Site Tools
 // @namespace    http://tampermonkey.net/
-// @version      1.3
+// @version      1.4
 // @description  Adds useful tool links to osu! website with improved UI
 // @author       Izunamori
 // @match        https://osu.ppy.sh/*
@@ -113,10 +113,10 @@
             .osu-tools-container {
                 position: fixed;
                 bottom: 20px;
-                left: 20px;
+                right: 20px;
                 display: flex;
                 flex-direction: column;
-                gap: 8px;
+                gap: 7px;
                 z-index: 9999;
                 font-family: var(--font-default);
                 background: rgba(0, 0, 0, 0.5);
@@ -126,6 +126,12 @@
                 max-height: 80vh;
                 overflow-y: auto;
                 min-width: 140px;
+                backdrop-filter: blur(5px);
+                -webkit-backdrop-filter: blur(5px);
+            }
+
+            body[data-forum-page] .osu-tools-container {
+                bottom: 70px;
             }
 
             .osu-tools-container.collapsed {
@@ -134,6 +140,10 @@
             }
 
             .osu-tools-container.collapsed .osu-tool-btn {
+                display: none;
+            }
+
+            .osu-tools-container:not(.collapsed) .osu-tools-toggle {
                 display: none;
             }
 
@@ -152,6 +162,7 @@
                 transition: transform 0.3s ease;
                 border-radius: 12px;
                 margin: 0 auto;
+                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
             }
 
             .toggle-line {
@@ -175,21 +186,29 @@
                 background: var(--menu-bg-color);
                 color: var(--menu-text-color);
                 text-decoration: none;
-                border-radius: 12px;
+                border-radius: 50px;
                 font-size: 14px;
                 font-weight: 500;
-                transition: all 0.2s ease;
+                transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
                 backdrop-filter: blur(5px);
                 border: 2px solid rgba(255, 255, 255, 0.1);
                 box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
                 white-space: nowrap;
                 text-align: center;
-                width: 120px;
+                width: 140px;
                 display: flex;
                 align-items: center;
                 justify-content: center;
                 opacity: 0.8;
                 transform: scale(1);
+                box-sizing: border-box;
+                backface-visibility: hidden;
+                transform-style: preserve-3d;
+                will-change: transform, opacity, box-shadow;
+            }
+
+            .osu-tool-btn + .osu-tool-btn {
+                margin-top: 0;
             }
 
             .osu-tool-btn,
@@ -202,23 +221,24 @@
             }
 
             .osu-tool-btn:hover {
-                transform: scale(1.05);
+                transform: scale(1.1);
                 opacity: 1;
                 background: var(--menu-bg-hover);
-                border-color: rgba(255, 255, 255, 0.2);
-                box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+                border-color: rgba(255, 255, 255, 0.3);
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+                z-index: 1;
             }
 
             @media (max-width: 768px) {
                 .osu-tools-container {
                     bottom: 10px;
-                    left: 10px;
+                    right: 10px;
                 }
 
                 .osu-tool-btn {
                     padding: 6px 12px;
                     font-size: 12px;
-                    width: 100px;
+                    width: 140px;
                 }
             }
 
@@ -249,7 +269,12 @@
         }
 
         const toolsContainer = document.createElement('div');
-        toolsContainer.className = 'osu-tools-container collapsed'; // Начинаем со свернутой панели
+        toolsContainer.className = 'osu-tools-container collapsed';
+
+        // Проверяем URL и добавляем атрибут для страниц форума
+        if (window.location.href.startsWith('https://osu.ppy.sh/community/forums/topics/')) {
+            document.body.setAttribute('data-forum-page', '');
+        }
 
         // Добавляем обработчик клика вне панели
         document.addEventListener('click', (e) => handleClickOutside(e, toolsContainer));
@@ -263,28 +288,59 @@
             toggleButton.appendChild(line);
         }
 
-        toggleButton.onclick = (e) => {
-            e.stopPropagation();
-            const isCollapsed = toolsContainer.classList.toggle('collapsed');
-            saveState(isCollapsed);
-            if (!isCollapsed) {
-                startAutoCollapseTimer(toolsContainer);
-            }
+        // Обработчики наведения для контейнера и кнопки
+        const expandPanel = () => {
+            toolsContainer.classList.remove('collapsed');
+            saveState(false);
         };
+
+        toggleButton.addEventListener('mouseenter', expandPanel);
+        toolsContainer.addEventListener('mouseenter', () => {
+            clearTimeout(autoCollapseTimer);
+            expandPanel();
+        });
+
+        toolsContainer.addEventListener('mouseleave', () => {
+            collapsePanel(toolsContainer);
+        });
 
         toolsContainer.appendChild(toggleButton);
 
-        CONFIG.tools.forEach(tool => {
+        CONFIG.tools.forEach((tool, index) => {
             const button = document.createElement('a');
             button.className = 'osu-tool-btn';
             button.href = tool.url;
             button.target = '_blank';
             button.rel = 'noopener noreferrer';
             button.textContent = tool.name;
+            button.style.animationDelay = `${index * 0.05}s`;
+
+            // Добавляем обработчики наведения
+            button.addEventListener('mouseenter', () => {
+                const buttons = toolsContainer.querySelectorAll('.osu-tool-btn');
+                const currentIndex = Array.from(buttons).indexOf(button);
+
+                // Анимация для предыдущих кнопок
+                if (currentIndex >= 1) buttons[currentIndex - 1].style.transform = 'scale(1.02)';
+                if (currentIndex >= 2) buttons[currentIndex - 2].style.transform = 'scale(1.01)';
+
+                // Анимация для следующих кнопок
+                if (currentIndex < buttons.length - 1) buttons[currentIndex + 1].style.transform = 'scale(1.02)';
+                if (currentIndex < buttons.length - 2) buttons[currentIndex + 2].style.transform = 'scale(1.01)';
+            });
+
+            button.addEventListener('mouseleave', () => {
+                const buttons = toolsContainer.querySelectorAll('.osu-tool-btn');
+                buttons.forEach(btn => {
+                    if (btn !== button) btn.style.transform = '';
+                });
+            });
+
             // Добавляем сворачивание при клике на кнопку
             button.addEventListener('click', () => {
                 setTimeout(() => collapsePanel(toolsContainer), 100);
             });
+
             toolsContainer.appendChild(button);
         });
 
